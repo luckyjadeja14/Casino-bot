@@ -2,12 +2,16 @@ import discord
 from discord.ext import commands
 import random
 import os
-# import dotenv # No longer strictly needed if you only set token on server
-# from dotenv import load_dotenv # No longer strictly needed
+# import dotenv # Not strictly needed if token is only in Replit Secrets
+# from dotenv import load_dotenv # Not strictly needed
+
+# For Replit Uptime with UptimeRobot
+from flask import Flask
+from threading import Thread
 
 # --- Configuration ---
-# load_dotenv() # You can comment this out if you ONLY set token on server
-BOT_TOKEN = os.getenv("DISCORD_TOKEN") # This line is CRUCIAL
+# load_dotenv() # Only if you were testing locally with a .env file
+BOT_TOKEN = os.getenv("DISCORD_TOKEN") # Reads from Replit Secrets
 COMMAND_PREFIX = "!"
 INITIAL_COINS = 1000
 SHELL_PAYOUT_MULTIPLIER = 2.8
@@ -16,10 +20,29 @@ SHELL_EMOJI = "🏺"
 PRIZE_EMOJI = "🪙"
 EMPTY_EMOJI = "💨"
 
+# --- Flask App for Uptime ---
+# This small web server will be pinged by UptimeRobot to keep the Repl alive.
+uptime_app = Flask('')
+
+@uptime_app.route('/')
+def home():
+    return "Bot is alive!" # Simple response for UptimeRobot
+
+def run_web_server():
+  # Runs the Flask app on host 0.0.0.0 (accessible from outside) and port 8080 (common Replit port)
+  uptime_app.run(host='0.0.0.0', port=8080)
+
+def keep_alive_server(): # Renamed to avoid conflict if you have another 'keep_alive'
+    """Starts the Flask web server in a separate thread."""
+    web_thread = Thread(target=run_web_server)
+    web_thread.start()
+# --- End Flask App Section ---
+
+
 # --- Bot Setup ---
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
+intents.members = True # If you plan to use member join events, etc.
 
 bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
 
@@ -43,10 +66,14 @@ async def update_balance(user_id: int, amount: int):
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
     print(f"Command Prefix: {COMMAND_PREFIX}")
-    if not BOT_TOKEN: # Add this check
-        print("CRITICAL ERROR: DISCORD_TOKEN is not set in the environment!")
-        print("Please ensure the DISCORD_TOKEN environment variable is configured on your hosting platform.")
-        await bot.close() # Stop the bot if token is missing
+    if not BOT_TOKEN:
+        print("CRITICAL ERROR: DISCORD_TOKEN is not set in Replit Secrets!")
+        print("Please go to Tools > Secrets and add your DISCORD_TOKEN.")
+        # Optionally, you could stop the bot here if the token is critical
+        # await bot.close() # Uncomment if you want the bot to stop if token is missing
+    else:
+        print("DISCORD_TOKEN found.")
+
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -62,7 +89,7 @@ async def on_command_error(ctx, error):
         print(f"Unhandled error in command {ctx.command}: {error}")
         await ctx.send("An unexpected error occurred. Please try again later.")
 
-# --- Game Commands ---
+# --- Game Commands (Identical to before) ---
 @bot.command(name="balance", aliases=["bal", "coins"])
 async def balance(ctx):
     user_id = ctx.author.id
@@ -114,17 +141,16 @@ async def choose_shell(ctx, choice: int):
     shells_display_list = [EMPTY_EMOJI] * 3
     shells_display_list[winning_shell_number - 1] = PRIZE_EMOJI
     
-    # Highlight user's choice
     final_shells_text_parts = []
     for i in range(3):
         current_shell_num = i + 1
         display_char = shells_display_list[i]
         if current_shell_num == choice:
-            if choice == winning_shell_number: # Correct choice
+            if choice == winning_shell_number:
                 final_shells_text_parts.append(f"**[{PRIZE_EMOJI}]** ({current_shell_num})")
-            else: # Incorrect choice
+            else:
                 final_shells_text_parts.append(f"**[{EMPTY_EMOJI}]** ({current_shell_num})")
-        else: # Other shells
+        else:
              final_shells_text_parts.append(f"[{display_char}] ({current_shell_num})")
     final_shells_text = "   ".join(final_shells_text_parts)
 
@@ -161,10 +187,11 @@ async def add_coins_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Invalid user or amount. Usage: `!addcoins @User <amount>`")
 
-# --- Run the Bot ---
+# --- Run the Bot and Keep Alive Server ---
 if __name__ == "__main__":
     if BOT_TOKEN:
-        bot.run(BOT_TOKEN)
+        keep_alive_server() # Start the Flask web server in a separate thread
+        bot.run(BOT_TOKEN)  # Start the Discord bot
     else:
-        print("CRITICAL ERROR: DISCORD_TOKEN environment variable not found.")
-        print("The bot will not start. Please configure DISCORD_TOKEN on your hosting platform.")
+        print("CRITICAL ERROR: DISCORD_TOKEN environment variable not found in Replit Secrets.")
+        print("The bot will not start. Please go to Tools > Secrets (padlock icon) and add your DISCORD_TOKEN.")
