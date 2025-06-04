@@ -1,0 +1,2 @@
+discord.py
+# python-dotenv (Optional if you only deploy and never run locally with a .env file)
